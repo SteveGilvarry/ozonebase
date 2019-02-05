@@ -1,6 +1,6 @@
 #include "../base/ozApp.h"
 #include "../base/ozListener.h"
-#include "../providers/ozNetworkAVInput.h"
+#include "../providers/ozAVInput.h"
 #include "../processors/ozMotionDetector.h"
 #include "../processors/ozMatrixVideo.h"
 #include "../protocols/ozHttpController.h"
@@ -12,7 +12,7 @@
 //
 int main( int argc, const char *argv[] )
 {
-    debugInitialise( "example6", "", 5 );
+    debugInitialise( "example6", "", 0 );
 
     Info( "Starting" );
 
@@ -20,7 +20,7 @@ int main( int argc, const char *argv[] )
 
     Application app;
 
-    NetworkAVInput input( "input", "/tmp/movie.mp4" );
+    AVInput input( "input", "/tmp/movie.mp4" );
     app.addThread( &input );
 
     MotionDetector motionDetector( "modect" );

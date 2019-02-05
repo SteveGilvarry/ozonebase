@@ -1,141 +1,40 @@
-# Ozone - state of the art framework for developing security and surveillance solutions.
+
+# Notice
+
+**oZone is now MIT licensed**
+
+Due to a change in priority in our personal lives, ozone is not actively maintained at the moment. It's pretty stable and well documented but we are not active in support/patches. That being said, if this project is useful for you, feel free to contribute/PR. This status may change if either Phil or I get freed up again.
+
+# Ozone -  an easy to use platform for Video Innovation
 
 [![Build Status](https://travis-ci.org/ozonesecurity/ozonebase.svg?branch=master)](https://travis-ci.org/ozonesecurity/ozonebase)
-
-### First an example:
-
-**Problem Statement 1: How about we tap into two public RTSP cameras, and display them on a browser (no RTSP support), run live motion detection on them, show motion frames and, yeah, while we are at it, stitch the two camera images and their live debug frames into a 4x4 muxed image?**
-
-**Problem Statement 2: Oh yeah, in 10 minutes.**
+[![Join Slack](https://github.com/ozonesecurity/ozonebase/blob/master/img/slacksm.png?raw=true)](https://ozone.herokuapp.com)
 
 
-**Answer: Tap on the image below to see a recording of a live video**
+Read/Follow our [Medium publication](https://medium.com/ozone-security) for interesting applications of oZone
 
-[![ozone server video](http://img.youtube.com/vi/Ic2HXUjxRnU/0.jpg)](http://www.youtube.com/watch?v=Ic2HXUjxRnU "ozone server example")
+Ozone is a modern and fully component based approach to tying together some of the best opensource libraries in the world in the areas of image manipulation, recognition and deep learning under an abstract and easy interface. oZone makes it very easy to import data from _any_ video source (live/recorded/file/web/proprietary) and apply intelligent decisions on top that analyze and react to the data contained in the frames.
 
-What's happening here is we wrote a simple server and client app. The server app connects to two traffic cameras, converts RTSP to MJPEG so it can show on the browser. It also creates motion detection streams and a stitched matrix frame to show you it rocks. And in less that 22 lines of core code. 
+Ozone is not a "Video Analytics" solution. There are many companies doing good work in this area. We are the 'unifying platform' underneath that makes it easy for you to take the best 3rd party libraries (many of which we already include) that server your purpose and build your app without learning new interfaces/languages or approach.
 
+oZone already provides key components and functionality like:
+* **Any source** - we support many video formats already. Don't see yours? Add a Provider for it.
+* **Recording service** - that can automatically create videos for events you define
+* **Detection** - Motion Detection, Face Detection, Shape Detection (dlib). Have your own amazing detection algorithm? Write a Processor for it.
+* **Recognition** - License plate recognition, Tensor flow (image recognition - in progress) or write your own
+* **Chaining** - chain multiple components to incrementally add functionality (example, chain Shape Detection to Motion Detection to only reach if there is Motion AND it matches the shapes you are looking for)
+* **Arbitrary Image Filters** - for deep diving into image transformations (histograms/edge detection/scaling/time stamping/etc.)
+* **Trigger framework** - allows you to combine external triggers (example temperature/location/etc) with image triggers for complex processing
 
+## Quick start
+[Web](http://ozone.network) & [Blog](https://medium.com/ozone-security)
 
-The client (HTML) code that renders the images above:
-Full code [here](https://github.com/ozonesecurity/ozonebase/blob/master/server/src/examples/starter_example.html)
+[Key Concepts](http://ozone-framework.readthedocs.io/en/latest/index.html)
 
-```
-<!-- REPLACE THE IP ADDRESS WITH YOUR SERVER IP -->
-<html>
-<body>
-  <table>
-    <h1>Example of the amazing simplicity of ozone server framework<h1>
-    <h5>Source code:<a href="https://github.com/ozonesecurity/ozonebase/blob/master/server/src/examples/starter_example.cpp">here</a></h5>
-    <th>Live Feeds, 2 traffic cameras</th>
-     <tr>
-        <!-- live frames -->
-        <td>
-            <img src="http://192.168.1.224:9292/watchcam1/cam1" />
-        </td>
-        <td>
-            <img src="http://192.168.1.224:9292/watchcam2/cam2" />
-        </td>
-     </tr>
-     <!-- debug frames -->
-     <tr>
-        <td>
-          Modect on cam1:<br/>
-          <img src="http://192.168.1.224:9292/debug/modectcam1" />
-        </td>
-        <td>
-          Modect on cam2:<br/>
-          <img src="http://192.168.1.224:9292/debug/modectcam2" />
-        </td>
-    </tr>
-  </table>
- 
-<h2> Muxed 4x4 stream of camera 1 and 2 and its debug frames</h2>
- <img src="http://192.168.1.224:9292/debug/matrixcammux" />
+[C++ API](http://ozone.network/apidocs/index.html)
 
-
-</body>
-</html>
-```
-
-
-The servercode that generates the images above:
-Full code [here](https://github.com/ozonesecurity/ozonebase/blob/master/server/src/examples/starter_example.cpp)
-
-
-```
-	Application app;
-
-   	// Two RTSP sources 
-    NetworkAVInput cam1( "cam1", "rtsp://170.93.143.139:1935/rtplive/0b01b57900060075004d823633235daa" );
-    NetworkAVInput cam2("cam2","rtsp://170.93.143.139:1935/rtplive/e0ffa81e00a200ab0050fa36c4235c0a");
-    app.addThread( &cam1 );
-    app.addThread( &cam2 );
-
-	// motion detect for cam1
-	MotionDetector motionDetector1( "modectcam1" );
-  	motionDetector1.registerProvider( cam1 );
-   	app.addThread( &motionDetector1 );
-
-	// motion detect for cam1
-	MotionDetector motionDetector2( "modectcam2" );
-  	motionDetector2.registerProvider( cam2 );
-   	app.addThread( &motionDetector2 );
-
-	// Let's make a mux/stitched handler for cam1 and cam2 and its debugs
-	MatrixVideo matrixVideo( "matrixcammux", PIX_FMT_YUV420P, 640, 480, FrameRate( 1, 10 ), 2, 2 );
-   	matrixVideo.registerProvider( cam1 );
-   	matrixVideo.registerProvider( *motionDetector1.deltaImageSlave() );
-   	matrixVideo.registerProvider( cam2 );
-   	matrixVideo.registerProvider( *motionDetector2.deltaImageSlave() );
-   	app.addThread( &matrixVideo );
-
-	Listener listener;
-    app.addThread( &listener );
-
-    HttpController httpController( "watch", 9292 );
-    httpController.addStream("watchcam1",cam1);
-    httpController.addStream("watchcam2",cam2);
-
-	httpController.addStream( "file", cam1 );
-   	httpController.addStream( "debug", SlaveVideo::cClass() );
-   	httpController.addStream( "debug", matrixVideo );
-   	httpController.addStream( "debug", motionDetector1 );
-   	httpController.addStream( "debug", motionDetector2 );
-	
-    listener.addController( &httpController );
-
-    app.run();
-```
-
-
-## Excited? Want to know more?
-
-Ozone is is rockstar framework to make development of custom security and surveillance products much easier than today.
-Completely re-written and more modern in architecture. Ozone is created by the original developer of ZoneMinder, Phil Coombes.
-
-Ozone comprises of:
-
-* server - base framework for developing security and surveilllance servers (like ZoneMinder, for example)
-* client - base framework for developing mobile apps for remote control (like zmNinja, for example)
-* examples - reference implementations to get  you started
-
-
-## What is the goal?
-
-Ozone a more modern take and has been re-architected to serve as a UI-less framework at its core. We expect this to be the core framework for developing full fledged apps on top. Our hope is that this will form the base of many security solutions - developers can use this library to accelerate their own vision of security software. Over time, we will also offer our own fully running UI enabled version running over NodeJS/Angular.
-
-## Intended audience
-
-We expect OEMs, ISVs and 3rd party developers to use this library to build their own solutons powered by us. It is not an end consumer product, unlike V1.
-
-As of today, there is no roadmap to merge this with version 1. Version 1 has a seperate goal from Version 2 and we think its best to leave it that way for now.
 
 ## Who is developing and maintaining Ozone?
-The Ozonebase server framework is developed by [Philip Coombes](https://github.com/web2wire), the original developer of ZoneMinder.
-The codebase will be maintained by Phil and [Pliable Pixels](https://github.com/pliablepixels) and other key contributors who will be added soon.
+The Ozonebase server framework was initially developed by [Philip Coombes](https://github.com/web2wire), the original developer of ZoneMinder. The codebase will be maintained and extended by Phil and [Pliable Pixels](https://github.com/pliablepixels) 
 
-Ozonebase part of a solution suite being developed by [Ozone Networks](http://ozone.network). The full solution suite will eventually include a server framework (this code), a mobile framework for white-labelled apps and a reference solution using them.
 
-Ozonebase is dual-licensed.
-Please refer to the [LICENSING](LICENSE.md) file for details.

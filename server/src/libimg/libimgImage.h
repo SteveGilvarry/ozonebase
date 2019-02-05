@@ -22,9 +22,7 @@ extern "C"
 
 extern "C"
 {
-#if HAVE_LIBAVUTIL_AVUTIL_H
 #include <libavutil/avutil.h>
-#endif // HAVE_LIBAVUTIL_AVUTIL_H
 #include <libavcodec/avcodec.h>
 }
 
@@ -275,8 +273,8 @@ protected:
     };
 
 public:
-    enum { CHAR_HEIGHT=11, CHAR_WIDTH=6 };
-    enum { LINE_HEIGHT=CHAR_HEIGHT+0 };
+    enum { OZ_CHAR_HEIGHT=11, OZ_CHAR_WIDTH=6 };
+    enum { LINE_HEIGHT=OZ_CHAR_HEIGHT+0 };
 
     typedef enum { FMT_UNDEF, /*FMT_BITMAP,*/ FMT_GREY, FMT_GREY16, /*FMT_HSV,*/ FMT_RGB, FMT_RGB48, FMT_YUV, FMT_YUVJ, FMT_YUVP, FMT_YUVJP } Format;
     typedef enum { CS_UNDEF, /*CS_BITMAP,*/ CS_GREY, CS_YUV, CS_YUVJ, /*CS_HSV,*/ CS_RGB } ColourSpace;
@@ -620,15 +618,15 @@ public:
     }
 
 public:
+#ifdef HAVE_LINUX_VIDEODEV2_H
     static Format getFormatFromPalette( int palette );
-#if HAVE_LIBAVUTIL_AVUTIL_H
+#endif
     static AVPixelFormat getFfPixFormat( Format format );
     static Format getFormatFromPixelFormat( AVPixelFormat pixelFormat );
     static AVPixelFormat getNativePixelFormat( AVPixelFormat pixelFormat )
     {
         return( getFfPixFormat( getFormatFromPixelFormat( pixelFormat ) ) );
     }
-#endif // HAVE_LIBAVUTIL_AVUTIL_H
 
 protected:
     Format mFormat;
@@ -659,13 +657,19 @@ public:
     Image();
     Image( const char *filename );
     Image( Format format, int width, int height, unsigned char *data=NULL, bool adoptData=false );
+#ifdef HAVE_LINUX_VIDEODEV2_H
     Image( int v4lPalette, int width, int height, unsigned char *data=NULL );
-#if HAVE_LIBAVUTIL_AVUTIL_H
+#endif
     Image( AVPixelFormat ffFormat, int width, int height, unsigned char *data=NULL );
-#endif // HAVE_LIBAVUTIL_AVUTIL_H
     Image( const Image &image );
     Image( Format format, const Image &image );
     ~Image();
+
+public:
+#ifdef HAVE_LINUX_VIDEODEV2_H
+    static size_t calcBufferSize( int v4lPalette, int width, int height );
+#endif
+    static size_t calcBufferSize( AVPixelFormat pixFormat, int width, int height );
 
 public:
     inline Format format() const { return( mFormat ); }
@@ -681,9 +685,7 @@ public:
     inline int stride() const { return( mStride ); }
     inline int size() const { return( mSize ); }
 
-#if HAVE_LIBAVUTIL_AVUTIL_H
     AVPixelFormat pixelFormat() const { return( getFfPixFormat( mFormat ) ); }
-#endif // HAVE_LIBAVUTIL_AVUTIL_H
 
     const ByteBuffer &buffer() const { return( mBuffer ); }
     ByteBuffer &buffer() { return( mBuffer ); }

@@ -7,6 +7,8 @@
 #include <string>
 #include <list>
 
+typedef uint64_t ozId_t;
+
 class FeedFrame;
 ///
 /// Garbage collected pointer to frames.
@@ -79,7 +81,7 @@ public:
 };
 
 class FeedConsumer;
-typedef bool (*FeedComparator)( FramePtr, const FeedConsumer * );   ///< Typedef for functions that are used to run boolean operations on frames
+typedef bool (*FeedComparator)( const FramePtr &, const FeedConsumer * );   ///< Typedef for functions that are used to run boolean operations on frames
 
 typedef enum { FEED_QUEUED=0x01, FEED_POLLED=0x02 } FeedLinkType;   ///< The nature of the relationship between provider and consumer
 typedef std::list<FeedComparator>  FeedComparatorList;
@@ -90,11 +92,11 @@ typedef std::list<FeedComparator>  FeedComparatorList;
 class FeedLink
 {
 private:
-    int                 mLinkType;                                  ///< Whether the link is queued, polled or both?
+    FeedLinkType        mLinkType;                                  ///< Whether the link is queued, polled or both?
     FeedComparatorList  mComparators;                               ///< What, if any, comparators to check 
 
 public:
-    FeedLink( int linkType, FeedComparator comparator=NULL ) :
+    FeedLink( FeedLinkType linkType, FeedComparator comparator=NULL ) :
         mLinkType( linkType )
     {
         if ( !linkType )
@@ -102,7 +104,7 @@ public:
         if ( comparator )
             mComparators.push_back( comparator );
     }
-    FeedLink( int linkType, FeedComparatorList comparators ) :
+    FeedLink( FeedLinkType linkType, FeedComparatorList comparators ) :
         mLinkType( linkType ),
         mComparators( comparators )
     {
@@ -114,15 +116,15 @@ public:
         mComparators( feedLink.mComparators )
     {
     }
-    void setPolled() { mLinkType |= FEED_POLLED; }
-    void clearPolled() { mLinkType &= ~FEED_POLLED; }
+    void setPolled() { mLinkType = (FeedLinkType)(mLinkType|FEED_POLLED); }
+    void clearPolled() { mLinkType = (FeedLinkType)(mLinkType&~FEED_POLLED); }
     bool isPolled() const { return( mLinkType & FEED_POLLED ); }
-    void setQueued() { mLinkType |= FEED_QUEUED; }
-    void clearQueued() { mLinkType &= ~FEED_QUEUED; }
+    void setQueued() { mLinkType = (FeedLinkType)(mLinkType|FEED_QUEUED); }
+    void clearQueued() { mLinkType = (FeedLinkType)(mLinkType&~FEED_QUEUED); }
     bool isQueued() const { return( mLinkType & FEED_QUEUED ); }
     const FeedComparatorList &comparators() const { return( mComparators ); }
     bool hasComparators() const { return( !mComparators.empty() ); }
-    bool compare( FramePtr, const FeedConsumer * ) const;
+    bool compare( const FramePtr &, const FeedConsumer * ) const;
 
     FeedLink &operator=( const FeedLink &feedLink )
     {
@@ -134,6 +136,13 @@ public:
 
 /// Some standard link types
 extern FeedLink     gQueuedFeedLink;
+extern FeedLink     gQueuedVideoLink;
+extern FeedLink     gQueuedAudioLink;
+extern FeedLink     gQueuedDataLink;
+
 extern FeedLink     gPolledFeedLink;
+extern FeedLink     gPolledVideoLink;
+extern FeedLink     gPolledAudioLink;
+extern FeedLink     gPolledDataLink;
 
 #endif // OZ_FEED_BASE_H

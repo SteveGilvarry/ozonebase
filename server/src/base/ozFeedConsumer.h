@@ -39,10 +39,10 @@ protected:
     FeedConsumer( FeedProvider &provider, const FeedLink &link=gQueuedFeedLink ) :
         mProviderLimit( 1 )
     {
-         registerProvider( provider, link );
+        registerProvider( provider, link );
     }
 
-    bool waitForProviders();                    ///< Return when all providers are ready to supply frames. Returns false
+    bool waitForProviders( unsigned int=0 );    ///< Return when all providers are ready to supply frames. Returns false
                                                 ///< if problems occur such as providers going away.
     bool checkProviders();                      ///< Verify that providers exist and are in good condition
     virtual void cleanup();                     ///< Tidy up relationships with providers etc before destruction.
@@ -66,6 +66,12 @@ public:
     ///
     virtual bool deregisterProvider( FeedProvider &provider, bool reciprocate=true );
 
+
+    ///
+    /// Deregisters all providers (and reciprocal consumers in providers)
+    ///
+    virtual bool deregisterAllProviders();
+
     /// Return the first provider, shortcut for when providers == 1 
     FeedProvider *provider() const { return( mProviders.empty() ? NULL : mProviders.begin()->first ); }
 
@@ -83,7 +89,7 @@ public:
     /// Place the given frame onto this consumers frame queue, the supplying provider is also given. Used by
     /// providers for distributing frames.
     ///
-    virtual bool queueFrame( FramePtr, FeedProvider * );
+    virtual bool queueFrame( const FramePtr &, FeedProvider * );
     //virtual bool writeFrame( const FeedFrame * )=0;
 };
 

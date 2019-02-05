@@ -2,15 +2,17 @@
 
 set(OZ_CONSUMER_SRC_FILES
     ozEventRecorder.cpp ozLocalFileDump.cpp ozLocalFileOutput.cpp 
-    ozMemoryOutput.cpp ozMovieFileOutput.cpp ozMp4FileOutput.cpp
+    ozMemoryOutput.cpp ozMemoryOutputV1.cpp ozMemoryTriggerV1.cpp 
+    ozMovieFileOutput.cpp ozMp4FileOutput.cpp ozVideoRecorder.cpp
    )
 
 set(OZ_CONSUMER_HDR_FILES
     ozEventRecorder.h ozLocalFileDump.h ozLocalFileOutput.h 
-    ozMemoryOutput.h ozMovieFileOutput.h ozMp4FileOutput.h
+    ozMemoryOutput.h ozMemoryOutputV1.h ozMemoryTriggerV1.h 
+    ozMovieFileOutput.h ozMp4FileOutput.h ozVideoRecorder.h
    )
 
-add_library(consumers ${OZ_CONSUMER_SRC_FILES})
+add_library(consumers STATIC ${OZ_CONSUMER_SRC_FILES} ${OZ_CONSUMER_HDR_FILES})
 
 target_link_libraries(consumers ${OZ_EXTRA_LIBS} ${OZ_BIN_LIBS})
 

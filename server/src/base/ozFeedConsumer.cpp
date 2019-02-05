@@ -17,6 +17,15 @@ void FeedConsumer::cleanup()
     mFrameQueue.clear();
     mQueueMutex.unlock();
 }
+/**
+* @brief 
+*
+* @return 
+*/
+bool FeedConsumer::deregisterAllProviders()
+{
+    cleanup();
+}
 
 /**
 * @brief 
@@ -95,12 +104,15 @@ bool FeedConsumer::hasProvider( FeedProvider &provider ) const
 *
 * @return 
 */
-bool FeedConsumer::waitForProviders()
+bool FeedConsumer::waitForProviders( unsigned int count )
 {
+    int waitFor = count ? count : mProviders.size();
+    int maxWaitCount = mProviders.size() - waitFor;
+
     mProviderMutex.lock();
     if ( mProviders.empty() )
     {
-        Warning( "%s: No providers registered for consumer", cidentity() );
+        Debug( 5,"%s: No providers registered for consumer", cidentity() );
     }
     mProviderMutex.unlock();
     int waitCount, readyCount, badCount;
@@ -110,7 +122,7 @@ bool FeedConsumer::waitForProviders()
         readyCount = 0;
         badCount = 0;
         mProviderMutex.lock();
-        Info( "%s: Got %lu providers", cidentity(), mProviders.size() );
+        Debug( 5,"%s: Got %lu providers", cidentity(), mProviders.size() );
         for ( ProviderMap::const_iterator iter = mProviders.begin(); iter != mProviders.end(); iter++ )
         {
             if ( iter->first->ready() )
@@ -121,7 +133,7 @@ bool FeedConsumer::waitForProviders()
             {
                 if ( iter->first->wait() )
                 {
-                    Info( "%s: Provider %s not ready", cidentity(), iter->first->cidentity() );
+                    Debug(1, "%s: Provider %s not ready", cidentity(), iter->first->cidentity() );
                     waitCount++;
                 }
                 else
@@ -139,14 +151,14 @@ bool FeedConsumer::waitForProviders()
             }
         }
         mProviderMutex.unlock();
-        if ( waitCount > 0 && badCount == 0 )
+        if ( waitCount > maxWaitCount && badCount == 0 )
         {
             mQueueMutex.lock();
             mFrameQueue.clear();
             mQueueMutex.unlock();
-            usleep( 10000 );
+            usleep( INTERFRAME_TIMEOUT );
         }
-    } while( waitCount > 0 && badCount == 0 );
+    } while( waitCount > maxWaitCount && badCount == 0 );
     //Info( "%s: Returning %d", cidentity(), readyCount > 0 && badCount == 0 );
     return( readyCount > 0 && badCount == 0 );
 }
@@ -204,11 +216,11 @@ bool FeedConsumer::checkProviders()
 *
 * @return 
 */
-bool FeedConsumer::queueFrame( FramePtr frame, FeedProvider *provider )
+bool FeedConsumer::queueFrame( const FramePtr &frame, FeedProvider *provider )
 {
     bool result = true;
     mQueueMutex.lock();
-    if ( mFrameQueue.size() > MAX_QUEUE_SIZE )
+    if ( mFrameQueue.size() >= MAX_QUEUE_SIZE )
     {
         Error( "%s: Maximum queue size exceeded, got %lu frames, not running?", cidentity(), mFrameQueue.size() );
         result = false;
@@ -304,7 +316,10 @@ VideoConsumer::VideoConsumer()
 */
 VideoProvider *VideoConsumer::videoProvider() const
 {
-    return( mProviders.empty() ? NULL : dynamic_cast<VideoProvider *>(mProviders.begin()->first) );
+    VideoProvider *provider = mProviders.empty() ? NULL : dynamic_cast<VideoProvider *>(mProviders.begin()->first);
+    if ( !provider )
+        throw Exception( "No video provider found" );
+    return( provider );
 }
 
 /**

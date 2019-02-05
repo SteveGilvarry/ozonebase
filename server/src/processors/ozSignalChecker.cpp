@@ -147,13 +147,13 @@ bool SignalChecker::checkSignal( const Image &image )
 *
 * @return 
 */
-bool SignalChecker::signalValid( FramePtr frame, const FeedConsumer * )
+bool SignalChecker::signalValid( const FramePtr &frame, const FeedConsumer * )
 {
     const VideoFrame *videoFrame = dynamic_cast<const VideoFrame *>(frame.get());
     const SignalChecker *signalChecker = dynamic_cast<const SignalChecker *>( videoFrame->provider() );
     if ( !signalChecker )
         Panic( "Can't check signal valid, frame source not signal checker" );
-    Info( "Checking valid - %d", signalChecker->hasSignal() );
+    Debug( 2,"Checking valid - %d", signalChecker->hasSignal() );
     return( signalChecker->hasSignal() );
 }
 
@@ -165,7 +165,7 @@ bool SignalChecker::signalValid( FramePtr frame, const FeedConsumer * )
 *
 * @return 
 */
-bool SignalChecker::signalInvalid( FramePtr frame, const FeedConsumer * )
+bool SignalChecker::signalInvalid( const FramePtr &frame, const FeedConsumer * )
 {
     const VideoFrame *videoFrame = dynamic_cast<const VideoFrame *>(frame.get());
     const SignalChecker *signalChecker = dynamic_cast<const SignalChecker *>( videoFrame->provider() );

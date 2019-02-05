@@ -14,6 +14,9 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavdevice/avdevice.h>
 #include <libswscale/swscale.h>
+#include <libavfilter/avfiltergraph.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 #ifdef __cplusplus
 }
 #endif
@@ -157,5 +160,8 @@ void avDictSet( AVDictionary **dict, const char *name, int value );
 void avDictSet( AVDictionary **dict, const char *name, double value );
 void avSetH264Profile( AVDictionary **dict, const std::string &profile );
 void avSetH264Preset( AVDictionary **dict, const std::string &preset );
+
+enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx, AVCodec *codec, enum AVPixelFormat target);
+void choose_sample_fmt(AVStream *st, AVCodec *codec);
 
 #endif // OZ_FFMPEG_H

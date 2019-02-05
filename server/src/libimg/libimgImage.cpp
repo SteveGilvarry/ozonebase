@@ -892,6 +892,7 @@ void Image::copyBGR2RGB( unsigned char *pDst, const unsigned char *pSrc, int wid
 *
 * @return 
 */
+#ifdef HAVE_LINUX_VIDEODEV2_H
 Image::Format Image::getFormatFromPalette( int palette )
 {
     Format format = FMT_UNDEF;
@@ -922,8 +923,8 @@ Image::Format Image::getFormatFromPalette( int palette )
     }
     return( format );
 }
+#endif
 
-#if HAVE_LIBAVUTIL_AVUTIL_H
 /**
 * @brief 
 *
@@ -943,7 +944,7 @@ AVPixelFormat Image::getFfPixFormat( Format format )
             pixFormat = AV_PIX_FMT_GRAY16;
             break;
         case FMT_RGB :
-            pixFormat = AV_PIX_FMT_BGR24;
+            pixFormat = AV_PIX_FMT_RGB24;
             break;
         case FMT_RGB48 :
             pixFormat = AV_PIX_FMT_RGB48BE;
@@ -1029,8 +1030,6 @@ Image::Format Image::getFormatFromPixelFormat( AVPixelFormat pixelFormat )
     return( format );
 }
 
-#endif // HAVE_LIBAVUTIL_AVUTIL_H
-
 /**
 * @brief 
 *
@@ -1041,6 +1040,7 @@ Image::Format Image::getFormatFromPixelFormat( AVPixelFormat pixelFormat )
 Image::BlendTablePtr Image::getBlendTable( int transparency )
 {
     static Mutex blendMutex;
+
     blendMutex.lock();
     BlendTablePtr blendPtr = smBlendTables[transparency];
     if ( !blendPtr )
@@ -1339,7 +1339,7 @@ unsigned char Image::v( int x, int y ) const
 */
 void Image::dump( int lines, int cols ) const
 {
-    Info( "DUMP-F%d, %dx%d", mFormat, mWidth, mHeight );
+    Debug( 1,"DUMP-F%d, %dx%d", mFormat, mWidth, mHeight );
     if ( lines > 0 )
     {
         if ( lines > mHeight )
@@ -1348,7 +1348,7 @@ void Image::dump( int lines, int cols ) const
             cols = mWidth;
         if ( mPlanes == 1 )
         {
-            Info( "DUMP-%d channels", mChannels );
+            Debug( 1,"DUMP-%d channels", mChannels );
             for ( int y = 0; y < lines; y++ )
             {
                 Hexdump( 0, mBuffer.data()+(mStride*y), cols*mChannels*mPixelWidth );
@@ -1357,7 +1357,7 @@ void Image::dump( int lines, int cols ) const
         else
         {
             unsigned char *yPtr = mBuffer.data();
-            Info( "DUMP-Y-Channel" );
+            Debug( 1,"DUMP-Y-Channel" );
             for ( int y = 0; y < lines; y++ )
             {
                 Hexdump( 0, yPtr+(mStride*y), cols*mPixelWidth );
@@ -1365,7 +1365,7 @@ void Image::dump( int lines, int cols ) const
             if ( mChannels > 1 )
             {
                 unsigned char *uPtr = yPtr+mPlaneSize;
-                Info( "DUMP-U-Channel" );
+                Debug( 1,"DUMP-U-Channel" );
                 for ( int y = 0; y < lines; y++ )
                 {
                     Hexdump( 0, uPtr+(mStride*y), cols*mPixelWidth );
@@ -2199,8 +2199,51 @@ Image::Image( Format format, int width, int height, unsigned char *data, bool ad
 * @param v4lPalette
 * @param width
 * @param height
+*/
+#ifdef HAVE_LINUX_VIDEODEV2_H
+size_t Image::calcBufferSize( int v4lPalette, int width, int height )
+{
+    size_t pixels = width*height;
+    switch( v4lPalette )
+    {
+        case V4L2_PIX_FMT_YUV420 :
+        case V4L2_PIX_FMT_YUV410 :
+        case V4L2_PIX_FMT_YUV422P :
+        case V4L2_PIX_FMT_YUV411P :
+        case V4L2_PIX_FMT_YUYV :
+        case V4L2_PIX_FMT_UYVY :
+        {
+            // Converts to YUV expanded planar format
+            return( pixels*3 );
+        }
+        case V4L2_PIX_FMT_RGB555 :
+        case V4L2_PIX_FMT_RGB565 :
+        case V4L2_PIX_FMT_BGR24 :
+        case V4L2_PIX_FMT_RGB24 :
+        {
+            // Converts to RGB format
+            return( pixels*3 );
+        }
+        case V4L2_PIX_FMT_GREY :
+        {
+            // Converts to greyscale format
+            return( pixels);
+        }
+    }
+    Panic( "No conversion for unexpected V4L2 palette %08x", v4lPalette );
+    return( 0 );
+}
+#endif
+
+/**
+* @brief 
+*
+* @param v4lPalette
+* @param width
+* @param height
 * @param data
 */
+#ifdef HAVE_LINUX_VIDEODEV2_H
 Image::Image( int v4lPalette, int width, int height, unsigned char *data )
 {
     if ( !smInitialised )
@@ -2209,8 +2252,9 @@ Image::Image( int v4lPalette, int width, int height, unsigned char *data )
 
     Format format = FMT_UNDEF;
 
-    unsigned char tempData[MAX_IMAGE_SIZE];
-    unsigned char *imageData = data;
+    size_t bufferSize = calcBufferSize( v4lPalette, width, height );
+    uint8_t *tempData = new uint8_t [bufferSize];
+    uint8_t *imageData = data;
     switch( v4lPalette )
     {
         case V4L2_PIX_FMT_YUV420 :
@@ -2307,11 +2351,69 @@ Image::Image( int v4lPalette, int width, int height, unsigned char *data )
 #endif
         default :
         {
-            Panic( "Can't convert palette %d to image format", v4lPalette );
+            Panic( "Can't convert V4L2 palette %08x to image format", v4lPalette );
             break;
         }
     }
     assign( format, width, height, imageData );
+    delete[] tempData;
+}
+#endif
+
+/**
+* @brief 
+*
+* @param pixFormat
+* @param width
+* @param height
+*/
+size_t Image::calcBufferSize( AVPixelFormat pixFormat, int width, int height )
+{
+    size_t pixels = width*height;
+    switch( pixFormat )
+    {
+        case AV_PIX_FMT_YUV420P :   ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
+        case AV_PIX_FMT_YUYV422 :   ///< packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
+        case AV_PIX_FMT_UYVY422 :   ///< packed YUV 4:2:2, 16bpp, Cb Y0 Cr Y1
+        case AV_PIX_FMT_YUV422P :   ///< planar YUV 4:2:2, 16bpp, (1 Cr & Cb sample per 2x1 Y samples)
+        case AV_PIX_FMT_YUV444P :   ///< planar YUV 4:4:4, 24bpp, (1 Cr & Cb sample per 1x1 Y samples)
+        case AV_PIX_FMT_YUV410P :   ///< planar YUV 4:1:0,  9bpp, (1 Cr & Cb sample per 4x4 Y samples)
+        case AV_PIX_FMT_YUV411P :   ///< planar YUV 4:1:1, 12bpp, (1 Cr & Cb sample per 4x1 Y samples)
+        case AV_PIX_FMT_YUVJ420P :  ///< planar YUV 4:2:0, 12bpp, full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV420P and setting color_range
+        case AV_PIX_FMT_YUVJ422P :  ///< planar YUV 4:2:2, 16bpp, full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV422P and setting color_range
+        case AV_PIX_FMT_YUVJ444P :  ///< planar YUV 4:4:4, 24bpp, full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV444P and setting color_range
+        case AV_PIX_FMT_YUV440P :   ///< planar YUV 4:4:0 (1 Cr & Cb sample per 1x2 Y samples)
+        case AV_PIX_FMT_YUVJ440P :  ///< planar YUV 4:4:0 full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV440P and setting color_range
+        {
+            // Converts to YUV expanded planar format
+            return( pixels*3 );
+        }
+        case AV_PIX_FMT_RGB24 :     ///< packed RGB 8:8:8, 24bpp, RGBRGB...
+        case AV_PIX_FMT_BGR24 :     ///< packed RGB 8:8:8, 24bpp, BGRBGR...
+        case AV_PIX_FMT_RGB565:
+        case AV_PIX_FMT_RGB555:
+        {
+            // Converts to RGB format
+            return( pixels*3 );
+        }
+        case AV_PIX_FMT_RGB48:
+        {
+            // Converts to RGB 48 bits format
+            return( pixels*6 );
+        }
+        case AV_PIX_FMT_GRAY8 :     ///<        Y        ,  8bpp
+        {
+            // Converts to greyscale format
+            return( pixels );
+        }
+        case AV_PIX_FMT_GRAY16 :
+        {
+            // Converts to greyscale 16 bits format
+            return( pixels*2 );
+        }
+    }
+    Panic( "No conversion for unexpected AVPixelFormat palette %d", pixFormat );
+    return( 0 );
 }
 
 /**
@@ -2330,10 +2432,9 @@ Image::Image( AVPixelFormat pixFormat, int width, int height, unsigned char *dat
 
     Format format = FMT_UNDEF;
 
-    static unsigned char *tempData = NULL;
-    if ( !tempData )
-        tempData = new unsigned char[MAX_IMAGE_SIZE];
-    unsigned char *imageData = data;
+    size_t bufferSize = calcBufferSize( pixFormat, width, height );
+    uint8_t *tempData = new uint8_t[bufferSize];
+    uint8_t *imageData = data;
     switch( pixFormat )
     {
         case AV_PIX_FMT_YUV420P :   ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
@@ -2346,9 +2447,9 @@ Image::Image( AVPixelFormat pixFormat, int width, int height, unsigned char *dat
         }
         case AV_PIX_FMT_YUYV422 :   ///< packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
         {
-            format = FMT_RGB;
+            format = FMT_YUVP;
             if ( !data ) break;
-            copyYUYV2RGB( tempData, data, width, height );
+            copyYUYV2YUVP( tempData, data, width, height );
             imageData = tempData;
             break;
         }
@@ -2498,6 +2599,7 @@ Image::Image( AVPixelFormat pixFormat, int width, int height, unsigned char *dat
         }
     }
     assign( format, width, height, imageData );
+    delete[] tempData;
 }
 
 /**
@@ -9068,7 +9170,7 @@ const Coord Image::textCentreCoord( const char *text )
         line = text+index;
         lineNo++;
     }
-    int x = (mWidth - (maxLineLen * CHAR_WIDTH) ) / 2;
+    int x = (mWidth - (maxLineLen * OZ_CHAR_WIDTH) ) / 2;
     int y = (mHeight - (lineNo * LINE_HEIGHT) ) / 2;
     return( Coord( x, y ) );
 }
@@ -9103,7 +9205,7 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
 
     while ( (index < textLen) && (lineLen = strcspn( line, "\n" )) )
     {
-        int lineWidth = lineLen * CHAR_WIDTH;
+        int lineWidth = lineLen * OZ_CHAR_WIDTH;
 
         int loLineX = coord.x();
         int loLineY = coord.y() + (lineNo * LINE_HEIGHT);
@@ -9139,13 +9241,13 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
                 unsigned char fgColY = RGB2YUVJ_Y(fgColR,fgColG,fgColB);
                 unsigned char bgColY = RGB2YUVJ_Y(bgColR,bgColG,bgColB);
                 unsigned char *ptr = mBuffer.data()+((loLineY*mStride)+(loLineX*mPixelStep));
-                for ( int y = loLineY, row = 0; y < hiLineY && row < CHAR_HEIGHT; y++, row++, ptr += mStride )
+                for ( int y = loLineY, row = 0; y < hiLineY && row < OZ_CHAR_HEIGHT; y++, row++, ptr += mStride )
                 {
                     unsigned char *tempPtr = ptr;
                     for ( int x = loLineX, c = 0; x < hiLineX && c < lineLen; c++ )
                     {
-                        int f = fontdata[(line[c] * CHAR_HEIGHT) + row];
-                        for ( int i = 0; i < CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
+                        int f = fontdata[(line[c] * OZ_CHAR_HEIGHT) + row];
+                        for ( int i = 0; i < OZ_CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
                         {
                             if ( f & (0x80 >> i) )
                             {
@@ -9164,13 +9266,13 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
             case FMT_RGB :
             {
                 unsigned char *ptr = mBuffer.data()+(((loLineY*mWidth)+loLineX)*mChannels);
-                for ( int y = loLineY, row = 0; y < hiLineY && row < CHAR_HEIGHT; y++, row++, ptr += mStride )
+                for ( int y = loLineY, row = 0; y < hiLineY && row < OZ_CHAR_HEIGHT; y++, row++, ptr += mStride )
                 {
                     unsigned char *tempPtr = ptr;
                     for ( int x = loLineX, c = 0; x < hiLineX && c < lineLen; c++ )
                     {
-                        int f = fontdata[(line[c] * CHAR_HEIGHT) + row];
-                        for ( int i = 0; i < CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
+                        int f = fontdata[(line[c] * OZ_CHAR_HEIGHT) + row];
+                        for ( int i = 0; i < OZ_CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
                         {
                             if ( f & (0x80 >> i) )
                             {
@@ -9195,13 +9297,13 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
             case FMT_RGB48 :
             {
                 unsigned char *ptr = mBuffer.data()+(((loLineY*mWidth)+loLineX)*mChannels);
-                for ( int y = loLineY, row = 0; y < hiLineY && row < CHAR_HEIGHT; y++, row++, ptr += mStride )
+                for ( int y = loLineY, row = 0; y < hiLineY && row < OZ_CHAR_HEIGHT; y++, row++, ptr += mStride )
                 {
                     unsigned char *tempPtr = ptr;
                     for ( int x = loLineX, c = 0; x < hiLineX && c < lineLen; c++ )
                     {
-                        int f = fontdata[(line[c] * CHAR_HEIGHT) + row];
-                        for ( int i = 0; i < CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
+                        int f = fontdata[(line[c] * OZ_CHAR_HEIGHT) + row];
+                        for ( int i = 0; i < OZ_CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
                         {
                             if ( f & (0x80 >> i) )
                             {
@@ -9236,13 +9338,13 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
                 unsigned char bgColU = convFuncs.U(bgColR,bgColG,bgColB);
                 unsigned char bgColV = convFuncs.V(bgColR,bgColG,bgColB);
                 unsigned char *ptr = mBuffer.data()+(((loLineY*mWidth)+loLineX)*mChannels);
-                for ( int y = loLineY, row = 0; y < hiLineY && row < CHAR_HEIGHT; y++, row++, ptr += mStride )
+                for ( int y = loLineY, row = 0; y < hiLineY && row < OZ_CHAR_HEIGHT; y++, row++, ptr += mStride )
                 {
                     unsigned char *tempPtr = ptr;
                     for ( int x = loLineX, c = 0; x < hiLineX && c < lineLen; c++ )
                     {
-                        int f = fontdata[(line[c] * CHAR_HEIGHT) + row];
-                        for ( int i = 0; i < CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
+                        int f = fontdata[(line[c] * OZ_CHAR_HEIGHT) + row];
+                        for ( int i = 0; i < OZ_CHAR_WIDTH && x < hiLineX; i++, x++, tempPtr += mPixelStep )
                         {
                             if ( f & (0x80 >> i) )
                             {
@@ -9275,15 +9377,15 @@ void Image::annotate( const char *text, const Coord &coord, const Rgb fgColour, 
                 unsigned char bgColU = convFuncs.U(bgColR,bgColG,bgColB);
                 unsigned char bgColV = convFuncs.V(bgColR,bgColG,bgColB);
                 unsigned char *pDstY = mBuffer.data()+((loLineY*mWidth)+loLineX);
-                for ( int y = loLineY, row = 0; y < hiLineY && row < CHAR_HEIGHT; y++, row++, pDstY += mStride )
+                for ( int y = loLineY, row = 0; y < hiLineY && row < OZ_CHAR_HEIGHT; y++, row++, pDstY += mStride )
                 {
                     unsigned char *tempDstY = pDstY;
                     unsigned char *tempDstU = tempDstY + mPlaneSize;
                     unsigned char *tempDstV = tempDstU + mPlaneSize;
                     for ( int x = loLineX, c = 0; x < hiLineX && c < lineLen; c++ )
                     {
-                        int f = fontdata[(line[c] * CHAR_HEIGHT) + row];
-                        for ( int i = 0; i < CHAR_WIDTH && x < hiLineX; i++, x++, tempDstY += mPixelStep, tempDstU += mPixelStep, tempDstV += mPixelStep )
+                        int f = fontdata[(line[c] * OZ_CHAR_HEIGHT) + row];
+                        for ( int i = 0; i < OZ_CHAR_WIDTH && x < hiLineX; i++, x++, tempDstY += mPixelStep, tempDstU += mPixelStep, tempDstV += mPixelStep )
                         {
                             if ( f & (0x80 >> i) )
                             {

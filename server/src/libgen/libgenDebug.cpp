@@ -8,8 +8,13 @@
 #include <syslog.h>
 #include <signal.h>
 #include <stdarg.h>
+#ifdef __APPLE__
+#include <sys/syscall.h>
+#else
 #include <syscall.h>
+#endif
 #include <errno.h>
+#include <stdexcept>
 
 int dbgLevel = 0;
 
@@ -537,6 +542,8 @@ void dbgOutput( int hex, const char * const file, const int line, const int leve
     {
         if ( level <= DBG_PNC )
             abort();
-        exit( -1 );
+        // let's not exit, throw instead
+        //exit( -1 );
+        throw std::runtime_error(dbgString);
     }
 }

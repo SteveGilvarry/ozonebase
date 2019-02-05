@@ -2,20 +2,25 @@
 #include "ozEventRecorder.h"
 
 #include "../base/ozMotionFrame.h"
+#include "../base/ozNotifyFrame.h"
 #include "../libgen/libgenTime.h"
 
 /**
-* @brief 
+* @brief  default run method
 *
 * @return 
 */
 int EventRecorder::run()
 {
-    if ( waitForProviders() )
+    if ( waitForProviders() ) 
     {
-        while( !mStop )
+        setReady();
+        while( !mStop ) // loop till this component is not stopped
         {
             mQueueMutex.lock();
+            
+            // components communicate with each other by filling up frame queues
+            // of registered components
             if ( !mFrameQueue.empty() )
             {
                 for ( FrameQueue::iterator iter = mFrameQueue.begin(); iter != mFrameQueue.end(); iter++ )
@@ -29,7 +34,8 @@ int EventRecorder::run()
             usleep( INTERFRAME_TIMEOUT );
         }
     }
-    cleanup();
+    FeedProvider::cleanup();
+    FeedConsumer::cleanup();
     return( 0 );
 }
 
@@ -40,25 +46,39 @@ int EventRecorder::run()
 *
 * @return 
 */
-bool EventRecorder::processFrame( FramePtr frame )
+bool EventRecorder::processFrame( const FramePtr &frame )
 {
-    const MotionFrame *motionFrame = dynamic_cast<const MotionFrame *>(frame.get());
+    const AlarmFrame *alarmFrame = dynamic_cast<const AlarmFrame *>(frame.get());
     //const VideoProvider *provider = dynamic_cast<const VideoProvider *>(frame->provider());
+    static uint64_t mLastAlarmTime;
+
+    if ( !alarmFrame )
+        return( false );
 
     AlarmState lastState = mState;
-    uint64_t now = time64();
 
-    if ( motionFrame->alarmed() )
+    if ( alarmFrame->alarmed() )
     {
         mState = ALARM;
-        mAlarmTime = now;
+        mLastAlarmTime = time64();
         if ( lastState == IDLE )
         {
             // Create new event
+            mAlarmTime = mLastAlarmTime;
             mEventCount++;
+
+            // lets set up notification 
+            EventNotification::EventDetail detail( mEventCount, EventNotification::EventDetail::BEGIN );
+            EventNotification *notification = new EventNotification( this, alarmFrame->id(), detail );
+            distributeFrame( FramePtr( notification ) );
             for ( FrameStore::const_iterator iter = mFrameStore.begin(); iter != mFrameStore.end(); iter++ )
             {
-                const MotionFrame *frame = dynamic_cast<const MotionFrame *>( iter->get() );
+                const AlarmFrame *frame = dynamic_cast<const AlarmFrame *>( iter->get() );
+                if ( !frame )
+                {
+                    Error( "Unexpected frame type in frame store" );
+                    continue;
+                }
                 std::string path = stringtf( "%s/img-%s-%d-%ju.jpg", mLocation.c_str(), mName.c_str(), mEventCount, frame->id() );
                 //Info( "PF:%d @ %dx%d", frame->pixelFormat(), frame->width(), frame->height() );
                 Image image( frame->pixelFormat(), frame->width(), frame->height(), frame->buffer().data() );
@@ -70,10 +90,21 @@ bool EventRecorder::processFrame( FramePtr frame )
     {
         mState = ALERT;
     }
-    else if ( lastState == ALERT )
+
+    if ( mState == ALERT ) // alarm is over, in 'transition' period
     {
-        if ( frame->age( mAlarmTime ) > MAX_EVENT_TAIL_AGE )
-            mState = IDLE;
+        if ( frame->age( mLastAlarmTime ) < -MAX_EVENT_TAIL_AGE )
+        {
+            // if we have specified a min. record time, honor that before
+            // we close the current recording
+            if ((((double)mLastAlarmTime-mAlarmTime)/1000000.0) >= mMinTime)
+            {
+                mState = IDLE;
+                EventNotification::EventDetail detail( mEventCount, ((double)mLastAlarmTime-mAlarmTime)/1000000.0 );
+                EventNotification *notification = new EventNotification( this, alarmFrame->id(), detail );
+                distributeFrame( FramePtr( notification ) );
+            }
+        }
     }
 
     if ( mState > IDLE )
@@ -81,14 +112,13 @@ bool EventRecorder::processFrame( FramePtr frame )
         std::string path;
         if ( mState == ALARM )
         {
-            path = stringtf( "%s/img-%s-%d-%ju-A.jpg", mLocation.c_str(), mName.c_str(), mEventCount, motionFrame->id() );
+            path = stringtf( "%s/img-%s-%d-%ju-A.jpg", mLocation.c_str(), mName.c_str(), mEventCount, alarmFrame->id() );
         }
         else if ( mState == ALERT )
         {
-            path = stringtf( "%s/img-%s-%d-%ju.jpg", mLocation.c_str(), mName.c_str(), mEventCount, motionFrame->id() );
+            path = stringtf( "%s/img-%s-%d-%ju.jpg", mLocation.c_str(), mName.c_str(), mEventCount, alarmFrame->id() );
         }
-        Info( "PF:%d @ %dx%d", motionFrame->pixelFormat(), motionFrame->width(), motionFrame->height() );
-        Image image( motionFrame->pixelFormat(), motionFrame->width(), motionFrame->height(), motionFrame->buffer().data() );
+        Image image( alarmFrame->pixelFormat(), alarmFrame->width(), alarmFrame->height(), alarmFrame->buffer().data() );
         image.writeJpeg( path.c_str() );
     }
 

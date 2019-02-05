@@ -61,13 +61,6 @@ int JpegEncoder::run()
     if ( !codec )
         Fatal( "Can't find encoder codec" );
 
-    AVDictionary *opts = NULL;
-    avDictSet( &opts, "width", mWidth );
-    avDictSet( &opts, "height", mHeight );
-    avDictSet( &opts, "framerate", (double)mFrameRate );
-    //char pixelFormat[64] = "";
-    //avDictSet( &opts, "pixel_format", av_get_pix_fmt_string( pixelFormat, sizeof(pixelFormat), mPixelFormat) );
-
     mCodecContext = avcodec_alloc_context3( codec );
 
     mCodecContext->width = mWidth;
@@ -79,11 +72,9 @@ int JpegEncoder::run()
     Debug( 2, "Time base = %d/%d", mCodecContext->time_base.num, mCodecContext->time_base.den );
     Debug( 2, "Pix fmt = %d", mCodecContext->pix_fmt );
 
-    avDumpDict( opts );
     /* open it */
-    if ( avcodec_open2( mCodecContext, codec, &opts ) < 0 )
+    if ( avcodec_open2( mCodecContext, codec, NULL ) < 0 )
         Fatal( "Unable to open encoder codec" );
-    avDumpDict( opts );
 
     AVFrame *inputFrame = avcodec_alloc_frame();
 
@@ -105,8 +96,8 @@ int JpegEncoder::run()
         struct SwsContext *convertContext = sws_getContext( inputWidth, inputHeight, inputPixelFormat, mCodecContext->width, mCodecContext->height, mCodecContext->pix_fmt, SWS_BICUBIC, NULL, NULL, NULL );
         if ( !convertContext )
             Fatal( "Unable to create conversion context for encoder" );
-        Info( "Converting from %d x %d @ %d -> %d x %d @ %d", inputWidth, inputHeight, inputPixelFormat, mCodecContext->width, mCodecContext->height, mCodecContext->pix_fmt );
-        Info( "%d bytes -> %d bytes",  avpicture_get_size( inputPixelFormat, inputWidth, inputHeight ), avpicture_get_size( mCodecContext->pix_fmt, mCodecContext->width, mCodecContext->height ) );
+        Debug(1, "Converting from %d x %d @ %d -> %d x %d @ %d", inputWidth, inputHeight, inputPixelFormat, mCodecContext->width, mCodecContext->height, mCodecContext->pix_fmt );
+        Debug( 1,"%d bytes -> %d bytes",  avpicture_get_size( inputPixelFormat, inputWidth, inputHeight ), avpicture_get_size( mCodecContext->pix_fmt, mCodecContext->width, mCodecContext->height ) );
 
         int outSize = 0;
         double timeInterval = (double)mCodecContext->time_base.num/mCodecContext->time_base.den;
@@ -115,6 +106,9 @@ int JpegEncoder::run()
         long double currTime = now.tv_sec+((double)now.tv_usec/1000000.0);
         long double nextTime = currTime;
         outputFrame->pts = 0;
+        outputFrame->width = mCodecContext->width;
+        outputFrame->height = mCodecContext->height;
+        outputFrame->format = mCodecContext->pix_fmt;
         while ( !mStop )
         {
             // Synchronise the output with the desired output frame rate
@@ -122,7 +116,7 @@ int JpegEncoder::run()
             {
                 gettimeofday( &now, 0 );
                 currTime = now.tv_sec+((double)now.tv_usec/1000000.0);
-                usleep( 1000 );
+                usleep( INTERFRAME_TIMEOUT );
             }
             nextTime += timeInterval;
 
@@ -132,22 +126,30 @@ int JpegEncoder::run()
                 if ( !mConsumers.empty() )
                 {
                     FrameQueue::iterator iter = mFrameQueue.begin();
-                    const FeedFrame *frame = iter->get();
+                    const VideoFrame *inputVideoFrame = NULL;
 
-                    const VideoFrame *inputVideoFrame = dynamic_cast<const VideoFrame *>(frame);
+                    while ( iter != mFrameQueue.end() )
+                    {
+                        const FeedFrame *frame = iter->get();
+                        inputVideoFrame = dynamic_cast<const VideoFrame *>(frame);
+                        if ( inputVideoFrame )
+                            break;
+                        iter++;
+                    }
+
                     if ( inputVideoFrame )
                     {
-                        Info( "PF:%d @ %dx%d", inputVideoFrame->pixelFormat(), inputVideoFrame->width(), inputVideoFrame->height() );
+                        Debug( 2,"PF:%d @ %dx%d", inputVideoFrame->pixelFormat(), inputVideoFrame->width(), inputVideoFrame->height() );
 
                         //encodeFrame( frame );
                         avpicture_fill( (AVPicture *)inputFrame, inputVideoFrame->buffer().data(), inputPixelFormat, inputWidth, inputHeight );
 
-                        outputFrame->pts = inputVideoFrame->timestamp();
-                        Debug( 5, "PTS %jd", outputFrame->pts );
+                        outputFrame->pts = inputVideoFrame->timestamp() * av_q2d(mCodecContext->time_base);
+                        Debug( 5, "TS:%jd, PTS %jd", inputVideoFrame->timestamp(), outputFrame->pts );
                         //outputFrame->pts = av_rescale_q( inputVideo.timestamp, mCodecContext->time_base, sourceCodecContext->time_base );
 
                         // Reformat the input frame to fit the desired output format
-                        Info( "oFd:%p, oFls:%d", outputFrame->data, *(outputFrame->linesize) );
+                        Debug(2, "oFd:%p, oFls:%d", outputFrame->data, *(outputFrame->linesize) );
                         if ( sws_scale( convertContext, inputFrame->data, inputFrame->linesize, 0, inputHeight, outputFrame->data, outputFrame->linesize ) < 0 )
                             Fatal( "Unable to convert input frame (%d@%dx%d) to output frame (%d@%dx%d) at frame %ju", inputPixelFormat, inputWidth, inputHeight, mCodecContext->pix_fmt, mCodecContext->width, mCodecContext->height, mFrameCount );
 

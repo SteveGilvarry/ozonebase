@@ -1,6 +1,6 @@
-##
+###
 # travis configuration for oZone
-##
+###
 
 language: cpp
 sudo: required
@@ -8,7 +8,7 @@ dist: trusty
 compiler: gcc
 
 notifications:
-  slack: ozonesecurity:c3kGxR60pP42b9Kr91QPtJQU
+  slack: ozonesecurity:G1nKPaoZHfRCvC6GjnvRUB2J
   on_success: never
   on_failure: always
 
@@ -17,9 +17,10 @@ branches:
 
 addons:
   apt:
+    sources:
+      - llvm-toolchain-precise
+      - ubuntu-toolchain-r-test
     packages:
-      - nodejs-legacy
-      - npm
       - build-essential
       - make
       - git
@@ -36,22 +37,31 @@ addons:
       - texinfo
       - yasm
       - zlib1g-dev
+      - libopenblas-dev
+      - liblapack-dev
+      - libatlas-base-dev
+      - g++-5
+      - gcc-5
+      - nasm
+      
+before_install:
+      # this is not present in travis' apt cache
+      - sudo apt-get -qq update
+      - sudo apt-get install -y libv4l-dev v4l-utils
 
 cache:
     directories:
       - externals/ffmpeg
+      - externals/dlib
+      - externals/openh264
+      - externals/json
 
-
-install:
-      - cd externals/ffmpeg
-      - ./configure --enable-shared
-      - make -j `grep processor /proc/cpuinfo|wc -l` 
-      - sudo make install 
-      - sudo make install-libs
 
 script:
-      - cd $TRAVIS_BUILD_DIR/server
-      - cmake -DOZ_EXMAPLES=ON .
-      - make
-      - sudo make install
+      - export CXX="g++-5" CC="gcc-5"
+      - mkdir -p ~/ozoneroot
+      - export INSTALLDIR=~/ozoneroot
+      - cd $TRAVIS_BUILD_DIR/
+      - ./ozone-build.sh
+
 
